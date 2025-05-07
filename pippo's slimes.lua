@@ -195,7 +195,6 @@ end
 local elementStack = makeList()
 
 
---[[
 function lib.gatherSlimelets()
     assert( not( elementStack:isEmpty() ) )
 
@@ -205,7 +204,6 @@ function lib.gatherSlimelets()
 
     return next
 end
-]]
 
 
 --- @class Pip.Slime.Element
@@ -298,7 +296,6 @@ defaults.__index = defaults
 setmetatable( element, defaults )
 
 
---[[
 --- @param slime Pip.Slime.Setup
 --- @return Pip.Slime.Setup
 function lib.defineSlime( slime )
@@ -310,10 +307,8 @@ function lib.defineSlime( slime )
 
     return slime
 end
-]]
 
 
---[[
 --- @param slime Pip.Slime.Setup
 --- @return nil
 function lib.makeSlime( slime )
@@ -335,7 +330,6 @@ function lib.makeSlime( slime )
 
     return slime
 end
-]]
 
 
 local openSlime
