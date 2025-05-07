@@ -261,6 +261,7 @@ end
 local element = {}
 ---@diagnostic disable-next-line: assign-type-mismatch
 element.__index = element
+element.__call = lib.gatherSlimelets
 
 
 local defaults = {
@@ -342,11 +343,11 @@ end
 
 lib.goop = setmetatable( {}, { __call = function ( _, _, last )
     if last then
-        print( "done!" )
+        lib.gatherSlimelets()
         return nil
     else
         openSlime = getNewSlime()
-        return true
+        return openSlime
     end
 end } )
 
