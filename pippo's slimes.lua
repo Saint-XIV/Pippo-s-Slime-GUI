@@ -108,6 +108,7 @@ function listClass:isEmpty()
 end
 
 
+--- @return Pip.Slime.List
 local function makeList()
     return setmetatable( {}, listClass )
 end
@@ -145,11 +146,7 @@ end
 
 
 local function write( text, x, y, limit, align, color, font )
-    if not( color ) then
-        love.graphics.setColor( 0, 0, 0 )
-    else
-        love.graphics.setColor( table.unpack( color ) )
-    end
+    setColor( color )
 
     if not( font ) then font = love.graphics.getFont() end
 
@@ -189,22 +186,7 @@ end
 --- @alias Pip.Slime.VerticalAlign "top" | "center" | "bottom"
 --- @alias Pip.Slime.Axis "x" | "y"
 --- @alias Pip.Slime.MouseButton "left" | "right" | "middle"
---- @alias Pip.Slime.Setup { width : Pip.Slime.SizeMode, height : Pip.Slime.SizeMode, minWidth : number, minHeight : number, maxWidth : number, maxHeight : number, x : number, y : number, layoutDirection : Pip.Slime.LayoutDirection, horizontalAlign : Pip.Slime.HorizontalAlign, verticalAlign : Pip.Slime.VerticalAlign, childSpacing : number, paddingAll : number, paddingTop : number, paddingBottom : number, paddingLeft : number, paddingRight : number, text : string, textHorizontalAlign : love.AlignMode, textVerticalAlign : Pip.Slime.VerticalAlign, font : love.Font, round : boolean, texture : love.Texture, color : Pip.Slime.Color, backgroundColor : Pip.Slime.Color, shadowOffsetX : number, shadowOffsetY : number, shadowColor : Pip.Slime.Color, textShadowOffsetX : number, textShadowOffsetY : number, scale : number, rotation : number, visible : boolean, mouseButton : Pip.Slime.MouseButton }
-
-
-local elementStack = makeList()
-
-
-function lib.gatherSlimelets()
-    assert( not( elementStack:isEmpty() ) )
-
-    --- @type Pip.Slime.Element
-    local next = elementStack:popBack()
-    next:close()
-
-    return next
-end
-
+--- @alias Pip.Slime.InputType "entered" | "exited" | "pressed" | "released" | "isTouching"
 
 --- @class Pip.Slime.Element
 --- @field private __index table
@@ -252,8 +234,6 @@ end
 --- @field package internalHeight number
 --- @field package horizontalPadding number
 --- @field package verticalPadding number
---- @field package userSetMinWidth boolean
---- @field package userSetMinHeight boolean
 --- @field package drawShadow boolean
 --- @field package drawTextShadow boolean
 ---
@@ -261,7 +241,6 @@ end
 local element = {}
 ---@diagnostic disable-next-line: assign-type-mismatch
 element.__index = element
-element.__call = lib.gatherSlimelets
 
 
 local defaults = {
@@ -289,7 +268,6 @@ local defaults = {
     -- Internal
     internalHeight = 0, internalWidth = 0,
     minWidth = 0, minHeight = 0,
-    userSetMinWidth = false, userSetMinHeight = false,
     drawShadow = false, drawTextShadow = false,
 }
 defaults.__index = defaults
@@ -297,59 +275,237 @@ defaults.__index = defaults
 setmetatable( element, defaults )
 
 
---- @param slime Pip.Slime.Setup
---- @return Pip.Slime.Setup
-function lib.defineSlime( slime )
-    --- @cast slime Pip.Slime.Element
-    --- @diagnostic disable-next-line: param-type-mismatch
+--- @type Pip.Slime.Element
+local openSlime
+local slimeCache = setmetatable( {}, { __mode = 'v' } )
+local elementStack = makeList()
+local definitionTable = {}
+local thisFrameMouseX, thisFrameMouseY
+local lastFrameMouseX, lastFrameMouseY
+local thisFrameMouseButtonsPressed = {}
+local lastFrameMouseButtonPressed = {}
+
+
+local function setupSlime( slime )
+    clearTable( slime )
+    ---@diagnostic disable-next-line: param-type-mismatch
     setmetatable( slime, element )
-
-    slime:init()
-
-    return slime
-end
-
-
---- @param slime Pip.Slime.Setup
---- @return nil
-function lib.makeSlime( slime )
-    --- @cast slime Pip.Slime.Element
-    slime.parent = nil
     slime.children = makeList()
 
-    --- @diagnostic disable-next-line: param-type-mismatch
-    setmetatable( slime, element )
-
-    slime:init()
-
-    if not( elementStack:isEmpty() ) then
-        local parent = elementStack:back()
-        parent:addChild( slime )
+    if not elementStack:isEmpty() then
+        elementStack:back():addChild( slime )
     end
-
-    elementStack:append( slime )
 
     return slime
 end
-
-
-local openSlime
 
 
 local function getNewSlime()
+    local slime
 
+    if slimeCache[ 1 ] == nil then
+        slime = setupSlime {}
+    else
+        slime = setupSlime( table.remove( slimeCache ) )
+    end
+
+    elementStack:append( slime )
+    return slime
 end
 
 
-lib.goop = setmetatable( {}, { __call = function ( _, _, last )
-    if last then
-        lib.gatherSlimelets()
-        return nil
-    else
-        openSlime = getNewSlime()
-        return openSlime
+local function closeSlime()
+    assert( not elementStack:isEmpty() )
+
+    local next = elementStack:popBack()
+    next:init()
+    next:close()
+
+    table.insert( slimeCache, next )
+    openSlime = elementStack:back()
+end
+
+
+function lib.goop()
+    local ran = false
+
+    return function ()
+        if ran then
+            closeSlime()
+            return nil
+        else
+            openSlime = getNewSlime()
+            ran = true
+            return definitionTable
+        end
     end
-end } )
+end
+
+
+--- @param width Pip.Slime.SizeMode
+function definitionTable.width( width )
+    openSlime.width = width
+end
+
+
+--- @param minWidth number
+function definitionTable.minWidth( minWidth )
+    openSlime.minWidth = minWidth
+end
+
+
+--- @param maxWidth number
+function definitionTable.maxWidth( maxWidth )
+    openSlime.maxWidth = maxWidth
+end
+
+
+--- @param height Pip.Slime.SizeMode
+function definitionTable.height( height )
+    openSlime.height = height
+end
+
+
+--- @param minHeight number
+function definitionTable.minHeight( minHeight )
+    openSlime.minHeight = minHeight
+end
+
+
+--- @param maxHeight number
+function definitionTable.maxHeight( maxHeight )
+    openSlime.maxHeight = maxHeight
+end
+
+
+--- @param layoutDirection Pip.Slime.LayoutDirection
+function definitionTable.layoutDirection( layoutDirection )
+    openSlime.layoutDirection = layoutDirection
+end
+
+
+--- @param horizontalAlign Pip.Slime.HorizontalAlign
+function definitionTable.horizontalAlign( horizontalAlign )
+    openSlime.horizontalAlign = horizontalAlign
+end
+
+
+--- @param verticalAlign Pip.Slime.VerticalAlign
+function definitionTable.verticalAlign( verticalAlign )
+    openSlime.verticalAlign = verticalAlign
+end
+
+
+--- @param childSpacing number
+function definitionTable.childSpacing( childSpacing )
+    openSlime.childSpacing = childSpacing
+end
+
+
+--- @param text string
+function definitionTable.text( text )
+    openSlime.text = text
+end
+
+--- @param textHorizontalAlign Pip.Slime.HorizontalAlign
+function definitionTable.textHorizontalAlign( textHorizontalAlign )
+    openSlime.textHorizontalAlign = textHorizontalAlign
+end
+
+
+--- @param textVerticalAlign Pip.Slime.VerticalAlign
+function definitionTable.textVerticalAlign( textVerticalAlign )
+    openSlime.textVerticalAlign = textVerticalAlign
+end
+
+
+--- @param font love.Font
+function definitionTable.font( font )
+    openSlime.font = font
+end
+
+
+--- @param isRound boolean
+function definitionTable.round( isRound )
+    openSlime.round = isRound
+end
+
+
+--- @param texture love.Texture
+function definitionTable.texture( texture )
+    openSlime.texture = texture
+end
+
+
+--- @param color Pip.Slime.Color | table
+function definitionTable.color( color )
+    openSlime.color = color
+end
+
+
+--- @param color Pip.Slime.Color | table
+function definitionTable.backgroundColor( color )
+    openSlime.backgroundColor = color
+end
+
+
+--- @param x number
+--- @param y number
+function definitionTable.shadowOffset( x, y )
+    openSlime.shadowOffsetX, openSlime.shadowOffsetY = x, y
+end
+
+
+--- @param color Pip.Slime.Color | table
+function definitionTable.shadowColor( color )
+    openSlime.shadowColor = color
+end
+
+
+--- @param x number
+--- @param y number
+function definitionTable.textShadowOffset( x, y )
+    openSlime.textShadowOffsetX, openSlime.textShadowOffsetY = x, y
+end
+
+
+--- @param scale number
+function definitionTable.scale( scale )
+    openSlime.scale = scale
+end
+
+
+--- @param rotation number
+function definitionTable.rotation( rotation )
+    openSlime.rotation = rotation
+end
+
+
+--- @param isVisible boolean
+function definitionTable.visible( isVisible )
+    openSlime.visible = isVisible
+end
+
+
+--- @param button Pip.Slime.MouseButton
+function definitionTable.mouseButton( button )
+    openSlime.mouseButton = button
+end
+
+
+--- @param left number
+--- @param right number
+--- @param top number
+--- @param bottom number
+function definitionTable.padding( left, right, top, bottom )
+    openSlime.paddingLeft, openSlime.paddingRight = left, right
+    openSlime.paddingTop, openSlime.paddingBottom = top, bottom
+end
+
+
+function definitionTable.getSlime()
+    return openSlime
+end
 
 
 --- @package
@@ -464,7 +620,7 @@ function element:close()
     self:setPosition( "x", "internalWidth", horizontalAlign )
     self:setPosition( "y", "internalHeight", verticalAlign )
 
-    self:handleInput()
+    --self:handleInput()
 end
 
 
@@ -861,81 +1017,65 @@ end
 
 -- Input
 
-local mousex, mousey
-local lastFrameElementsWithMouseIn = {}
-local elementsWithMouseIn = {}
-local lastFrameElementsPressed = {}
-local elementsPressed = {}
-local mouseButtonsPressed = {}
 
-do
-    local queue = makeQueue()
+local function isMouseOnElement( x, y, slime )
+    if x < slime.x or x > slime.x + slime.internalWidth then return false end
+    if y < slime.y or y > slime.y + slime.internalHeight then return false end
 
-    function element:handleInput()
-        if self.parent then return end
+    return true
+end
 
-        queue:clear()
-        queue:enqueue( self )
 
-        while not queue:isEmpty() do
-            --- @type Pip.Slime.Element
-            local current = queue:next()
-            current:doInput()
+local function thisFrameTouched( slime )
+    return isMouseOnElement( thisFrameMouseX, thisFrameMouseY, slime )
+end
 
-            for _, child in ipairs( current.children ) do
-                queue:enqueue( child )
-            end
-        end
+
+local function lastFrameTouched( slime )
+    return isMouseOnElement( lastFrameMouseX, lastFrameMouseY, slime )
+end
+
+
+local function thisFrameButtonDown( button )
+    return thisFrameMouseButtonsPressed[ button ]
+end
+
+
+local function lastFrameButtonDown( button )
+    return lastFrameMouseButtonPressed[ button ]
+end
+
+
+local inputChecks = {
+    entered = function ( slime )
+        return thisFrameTouched( slime ) and not lastFrameTouched( slime )
+    end,
+
+    exited = function ( slime )
+        return lastFrameTouched( slime ) and not thisFrameTouched( slime )
+    end,
+
+    pressed = function ( slime )
+        return thisFrameTouched( slime ) and thisFrameButtonDown( slime.mouseButton ) and not lastFrameButtonDown( slime.mouseButton )
+    end,
+
+    released = function ( slime )
+        if lastFrameTouched( slime ) and not thisFrameTouched( slime ) then return true end
+        return thisFrameTouched( slime ) and lastFrameButtonDown( slime.mouseButton ) and not thisFrameButtonDown( slime.mouseButton )
+    end,
+
+    isTouching = function ( slime )
+        return thisFrameTouched( slime )
     end
-end
+}
 
 
-function element:doInput()
-    local mouseIn = true
-
-    local left, right = self.x - self.paddingLeft, self.x + self.internalWidth + self.paddingRight
-    local top, bottom = self.y - self.paddingTop, self.y + self.internalHeight + self.paddingBottom
-
-    if mousex < left or mousex > right then mouseIn = false end
-    if mousey < top or mousey > bottom then mouseIn = false end
-
-    elementsWithMouseIn[ self ] = mouseIn
-    elementsPressed[ self ] = mouseButtonsPressed[ self.mouseButton ] == true
-end
-
-
+--- @param inputType Pip.Slime.InputType
 --- @param slime Pip.Slime.Element
 --- @return boolean
-function lib.isMouseIn( slime )
-    return elementsWithMouseIn[ slime ]
-end
-
-
---- @param slime Pip.Slime.Element
---- @return boolean
-function lib.didMouseEnter( slime )
-    return elementsWithMouseIn[ slime ] == true and lastFrameElementsWithMouseIn[ slime ] == false
-end
-
-
---- @param slime Pip.Slime.Element
---- @return boolean
-function lib.didMouseLeave( slime )
-    return elementsWithMouseIn[ slime ] == false and lastFrameElementsWithMouseIn[ slime ] == true
-end
-
-
---- @param slime Pip.Slime.Element
---- @return boolean
-function lib.didMouseClick( slime )
-    return elementsPressed[ slime ] and not lastFrameElementsPressed[ slime ]
-end
-
-
---- @param slime Pip.Slime.Element
---- @return boolean
-function lib.didMouseRelease( slime )
-    return not elementsPressed[ slime ] and lastFrameElementsPressed[ slime ]
+function lib.checkInput( inputType, slime )
+    if nil == lastFrameMouseX then return false end
+    return inputChecks[ inputType ]( slime )
 end
 
 
@@ -1036,29 +1176,20 @@ function element:drawSelf()
 end
 
 
-function lib.preUpdate( mouseX, mouseY )
-    mousex = mouseX
-    mousey = mouseY
+function lib.update()
+    lastFrameMouseX, lastFrameMouseY = thisFrameMouseX, thisFrameMouseY
 
-    mouseButtonsPressed.left = love.mouse.isDown( 1 )
-    mouseButtonsPressed.right = love.mouse.isDown( 2 )
-    mouseButtonsPressed.middle = love.mouse.isDown( 3 )
-
-    clearTable( lastFrameElementsWithMouseIn )
-    clearTable( lastFrameElementsPressed )
-
-    for key, value in pairs( elementsPressed ) do
-        lastFrameElementsPressed[ key ] = value
+    for key, value in pairs( thisFrameMouseButtonsPressed ) do
+        lastFrameMouseButtonPressed[ key ] = value
     end
 
-    for key, value in pairs( elementsWithMouseIn ) do
-        lastFrameElementsWithMouseIn[ key ] = value
-    end
+    thisFrameMouseX, thisFrameMouseY = love.mouse.getPosition()
 
-    clearTable( elementsPressed )
-    clearTable( elementsWithMouseIn )
+    thisFrameMouseButtonsPressed[ "left" ] = love.mouse.isDown( 1 )
+    thisFrameMouseButtonsPressed[ "right" ] = love.mouse.isDown( 2 )
+    thisFrameMouseButtonsPressed[ "middle" ] = love.mouse.isDown( 3 )
 end
 
 
-if not pip then pip = {} end
+pip = pip or {}
 pip.slime = lib
