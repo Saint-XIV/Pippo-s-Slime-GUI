@@ -1,59 +1,42 @@
 function love.load()
     require "pippo's slimes"
-
-    RedBox = pip.slime.defineSlime {
-        id = "top",
-        backgroundColor = { 1, 0, 0, 1 },
-        paddingAll = 10
-    }
-
-    GreenBox = pip.slime.defineSlime {
-        backgroundColor = { 0, 1, 0, 1 },
-        paddingAll = 10
-    }
-
-    for slime in pip.slime.goop do
-        TestSlime = slime
-        
-    end
+    Top = nil
 end
 
 
 function love.update( dt )
-    local slime = pip.slime
-    slime.preUpdate( love.mouse.getPosition() )
+    pip.slime.update()
 
-    slime.makeSlime( RedBox )
+    for slime in pip.slime.goop() do
+        slime.backgroundColor( { 1, 0, 0, 1 } )
+        slime.padding( 10, 10, 10, 10 )
 
-        slime.makeSlime( GreenBox )
+        Top = slime.getSlime()
 
-            local white = slime.makeSlime {
-                width = 100, height = 100,
-                backgroundColor = { 1, 1, 1, 1 }
-            } ()
-
-        slime.gatherSlimelets()
-
-    slime.gatherSlimelets()
-
-    if slime.didMouseEnter( white ) then
-        print( "entereed!" )
+        for _ in pip.slime.goop() do
+            slime.text( "hi there!" )
+            slime.backgroundColor( { 0, 1, 0, 1 } )
+        end
     end
 
-    if slime.didMouseLeave( white ) then
-        print( "left!" )
+    if pip.slime.checkInput( "entered", Top ) then
+        print( "entered" )
     end
 
-    if slime.didMouseClick( white ) then
-        print( "clicked!" )
+    if pip.slime.checkInput( "exited", Top ) then
+        print "left"
     end
 
-    if slime.didMouseRelease( white ) then
-        print( "released!" )
+    if pip.slime.checkInput( "pressed", Top ) then
+        print "pressed"
+    end
+
+    if pip.slime.checkInput( "released", Top ) then
+        print "released"
     end
 end
 
 
 function love.draw()
-    pip.slime.draw( RedBox )
+    pip.slime.draw( Top )
 end
